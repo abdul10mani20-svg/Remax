@@ -1,3 +1,76 @@
+const HAPPY_LITTLE_LICENSE_ENDPOINT = 'https://happy-little101.lovable.app/api/public/v1/licenses';
+const HAPPY_LITTLE_PRODUCT = 'browser-extension-core';
+
+async function validateEklasLicense(licenseKey, deviceIdentifier, activate = false) {
+	const operation = activate ? 'activate' : 'check';
+	try {
+		const response = await REMAX_NATIVE_FETCH(HAPPY_LITTLE_LICENSE_ENDPOINT, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				operation,
+				licenseKey: String(licenseKey || '').trim(),
+				productIdentifier: HAPPY_LITTLE_PRODUCT,
+				deviceIdentifier: String(deviceIdentifier || '').trim()
+			})
+		});
+		let result = null;
+		try {
+			result = await response.json();
+		} catch {}
+		const status = result?.status || (response.ok ? 'invalid' : 'unavailable');
+		const valid = result?.valid === true && status === 'active';
+		return {
+			...(result || {}),
+			ok: valid,
+			valid,
+			status,
+			expiresAt: result?.expiresAt || null,
+			expires_at: result?.expiresAt || null,
+			error: valid ? null : status
+		};
+	} catch (error) {
+		return { ok: false, valid: false, status: 'unavailable', error: error?.message || 'unavailable' };
+	}
+}
+
+async function happyLittleFetchLiveServerCredits(licenseKey, deviceIdentifier) {
+	const deviceId = String(deviceIdentifier || (typeof getDeviceId === 'function' ? await getDeviceId() : '')).trim();
+	const checked = await validateEklasLicense(licenseKey, deviceId);
+	if (checked.ok || checked.status !== 'device_mismatch') return checked;
+	const activated = await validateEklasLicense(licenseKey, deviceId, true);
+	if (!activated.ok) return activated;
+	return validateEklasLicense(licenseKey, deviceId);
+}
+
+const REMAX_NATIVE_FETCH = globalThis.fetch.bind(globalThis);
+
+function getLegacyLicenseRequest(input, init) {
+	const url = typeof input === 'string' ? input : input?.url || '';
+	if (!/eklas|keygen|license/i.test(url) || !init?.body) return null;
+	try {
+		const body = typeof init.body === 'string' ? JSON.parse(init.body) : null;
+		if (!body || typeof body !== 'object') return null;
+		const values = Object.values(body).filter(value => typeof value === 'string');
+		const licenseKey = body.license_key || body.licenseKey || body.key || values.find(value => /^LXC-/i.test(value)) || values.find(value => value.length >= 16);
+		const deviceIdentifier = body.device_id || body.deviceId || body.deviceIdentifier || values.find(value => value !== licenseKey && value.length >= 8);
+		if (!licenseKey || !deviceIdentifier) return null;
+		return { licenseKey, deviceIdentifier };
+	} catch {
+		return null;
+	}
+}
+
+globalThis.fetch = async (input, init) => {
+	const request = getLegacyLicenseRequest(input, init);
+	if (!request) return REMAX_NATIVE_FETCH(input, init);
+	const result = await happyLittleFetchLiveServerCredits(request.licenseKey, request.deviceIdentifier);
+	return new Response(JSON.stringify(result), {
+		status: result.status === 'rate_limited' ? 429 : 200,
+		headers: { 'Content-Type': 'application/json' }
+	});
+};
+
 /* ============================================================================
  * [LICENSE PROTECTION NOTICE / AVISO DE PROTEÇÃO DE LICENÇA]
  * ============================================================================
