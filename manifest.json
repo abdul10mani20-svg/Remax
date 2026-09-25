@@ -73,7 +73,8 @@
       "js": [
         "jszip.min.js",
         "gitMode.js",
-        "pageHook.js"
+        "pageHook.js",
+        "remax-credit-policy.js"
       ],
       "run_at": "document_start",
       "world": "MAIN"
